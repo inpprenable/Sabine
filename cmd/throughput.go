@@ -30,7 +30,7 @@ var (
 
 // ThroughputCmd represents the client command
 var ThroughputCmd = &cobra.Command{
-	Use:   "throughput [IP:Port] [NodeId] [Reducing Validator] [nb of Tx per second:exp duration]",
+	Use:   "throughput [IP:Port] [NodeId] [Nb Validator] [nb of Tx per second:exp duration]",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -66,7 +66,6 @@ to quickly create a Cobra application.`,
 func init() {
 	ZombieCmd.AddCommand(ThroughputCmd)
 	ThroughputCmd.Flags().BoolVar(&throughputArg.Multi, "multi", false, "Use it to distribute transactions to all nodes")
-	ThroughputCmd.Flags().IntVarP(&throughputArg.NbOfNode, "NbNode", "N", 0, "Wait until N nodes are connected to the bootstrap server")
 	ThroughputCmd.Flags().StringVarP(&throughputArg.DelayScenarioStr, "delayScenario", "d", "", "Specify the scenario for the evolution of the delai")
 
 }
