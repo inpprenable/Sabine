@@ -17,8 +17,10 @@ limitations under the License.
 */
 
 import (
+	"fmt"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"pbftnode/source/Blockchain"
 	"pbftnode/source/Launcher"
 	"strconv"
 )
@@ -42,6 +44,8 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(ZombieCmd)
 	ZombieCmd.PersistentFlags().BoolVarP(&zombieArg.ByBootstrap, "Bootstrap", "b", false, "Connect to a random node by the bootstrap Server")
+	ZombieCmd.Flags().StringVar(&validatorSelector, "validationType", "Pivot", "Set the selection of validator {Pivot|Random}")
+	ZombieCmd.PersistentFlags().IntVarP(&zombieArg.NumberOfNode, "NbNode", "N", 7, "Set the number of nodes and wait until N nodes are connected to the bootstrap server")
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
@@ -58,9 +62,16 @@ func zombieArgCreate(args []string) {
 	zombieArg.BaseArg = baseArg.NewBaseArg(logLevel)
 	zombieArg.Contact = args[0]
 	zombieArg.NodeID = args[1]
-	zombieArg.Reducing, err = strconv.Atoi(args[2])
+	zombieArg.NbVal, err = strconv.Atoi(args[2])
 	log.Info().Msgf("Contact : %s, nodeId : %s, reduction %s", args[0], args[1], args[2])
+	zombieArg.SelectionType = Blockchain.ParseSelectionValidatorType(validatorSelector)
 	if err != nil {
 		panic("[Reducing Validator] must be an int")
+	}
+	if zombieArg.NbVal < 4 || zombieArg.NumberOfNode < zombieArg.NbVal {
+		panic(fmt.Sprintf("The number of validator should be between 4 and the number of nodes,\n got nbval of %d and a nb of node of %d", zombieArg.NbVal, zombieArg.NumberOfNode))
+	}
+	if !(zombieArg.SelectionType == Blockchain.PivotSelection || zombieArg.SelectionType == Blockchain.RandomSelection) {
+		panic("The selection can only be Pivot or Random")
 	}
 }

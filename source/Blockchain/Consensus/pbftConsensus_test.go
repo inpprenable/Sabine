@@ -15,7 +15,7 @@ type compteur struct {
 
 type testSocket compteur
 
-func (socket *testSocket) UpdateDelay(parameter float64) {}
+func (socket *testSocket) UpdateDelay(parameter int) {}
 
 func (t *testSocket) TransmitTransaction(message Blockchain.Message) {
 	t.BroadcastMessage(message)
@@ -62,7 +62,7 @@ func TestPBFTConsensus_receiveTransacMess(t *testing.T) {
 		{"send 5 same Transaction", [Blockchain.NbTypeMess]int{}, false, true, 5, [Blockchain.NbTypeMess]int{1}},
 		{"send 1 Transaction, proposer", [Blockchain.NbTypeMess]int{}, true, true, 1, [Blockchain.NbTypeMess]int{0, 1, 1}},
 		{"send 5 same Transaction, proposer", [Blockchain.NbTypeMess]int{}, true, true, 5, [Blockchain.NbTypeMess]int{0, 1, 1}},
-		{"receive existing transaction", [Blockchain.NbTypeMess]int{1}, true, true, 5, [Blockchain.NbTypeMess]int{}},
+		{"receive existing transaction, the existing transaction should be mined", [Blockchain.NbTypeMess]int{1}, true, true, 5, [Blockchain.NbTypeMess]int{0, 1, 1}},
 		{"receive existing transaction", [Blockchain.NbTypeMess]int{1}, false, true, 5, [Blockchain.NbTypeMess]int{}},
 		{"Unknown sender", [Blockchain.NbTypeMess]int{}, false, false, 1, [Blockchain.NbTypeMess]int{}},
 	}
@@ -73,6 +73,7 @@ func TestPBFTConsensus_receiveTransacMess(t *testing.T) {
 			transaction, _ := implementInitState(consensus, tt.initState, nil)
 			time.Sleep(100 * time.Millisecond)
 			testSocket.eraseCmpt()
+			fmt.Println("Start experiment")
 			if !tt.knownValidator {
 				proposerWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", 2*consensus.GetValidator().GetNumberOfValidator()))
 				transaction = Blockchain.NewBruteTransaction([]byte("transaction"), *proposerWallet)
@@ -103,15 +104,15 @@ func createTestSocket(proposer bool) (testConsensus, *testSocket) {
 		ControlPeriod:    10,
 	})
 	consensus.Broadcast = true
-	testSocket.idNode = getIdValidator(*consensus.getBlockchain(), consensus.Validators, proposer)
+	testSocket.idNode = getIdValidator(consensus.getBlockchain(), consensus.Validators, proposer)
 	wallet = Blockchain.NewWallet(fmt.Sprintf("NODE%d", testSocket.idNode))
 	consensus.setWallet(*wallet)
 	consensus.SocketHandler = &testSocket
 	return consensus, &testSocket
 }
 
-func getIdValidator(chain Blockchain.Blockchain, validator Blockchain.ValidatorInterf, isValidator bool) int {
-	proposer := chain.GetProposerNumber()
+func getIdValidator(chain *Blockchain.Blockchain, validator Blockchain.ValidatorInterf, isValidator bool) int {
+	proposer := chain.GetProposerId()
 	if isValidator {
 		return proposer
 	}
@@ -147,7 +148,7 @@ func TestTestSocket(t *testing.T) {
 }
 
 func implementInitState(consensus testConsensus, state initState, data *Blockchain.Input) (*Blockchain.Transaction, *Blockchain.Block) {
-	proposerId := consensus.getBlockchain().GetProposerNumber()
+	proposerId := consensus.getBlockchain().GetProposerId()
 	proposerWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", proposerId))
 	nodeId := consensus.GetId()
 	var transaction *Blockchain.Transaction
@@ -224,11 +225,11 @@ func TestPBFTConsensus_receivePrePrepareMessage(t *testing.T) {
 			consensus, testSocket := createTestSocket(tt.nodeValidator)
 			transaction, block := implementInitState(consensus, tt.initState, nil)
 			if !tt.isValid {
-				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(*consensus.getBlockchain(), consensus.GetValidator(), false)))
+				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(consensus.getBlockchain(), consensus.GetValidator(), false)))
 				block = consensus.getBlockchain().CreateBlock([]Blockchain.Transaction{*transaction}, *invalidWallet)
 			}
 			if !tt.knownValidator {
-				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(*consensus.getBlockchain(), consensus.GetValidator(), false)+2*consensus.GetValidator().GetNumberOfValidator()))
+				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(consensus.getBlockchain(), consensus.GetValidator(), false)+2*consensus.GetValidator().GetNumberOfValidator()))
 				block = consensus.getBlockchain().CreateBlock([]Blockchain.Transaction{*transaction}, *invalidWallet)
 			}
 			message := Blockchain.Message{
@@ -280,7 +281,7 @@ func TestPBFTConsensus_receivePrepareMessage(t *testing.T) {
 			consensus, testSocket := createTestSocket(tt.fromKnown)
 			_, block := implementInitState(consensus, tt.initState, nil)
 			if !tt.isBlocValid {
-				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(*consensus.getBlockchain(), consensus.GetValidator(), false)))
+				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(consensus.getBlockchain(), consensus.GetValidator(), false)))
 				block = consensus.getBlockchain().CreateBlock([]Blockchain.Transaction{*Blockchain.NewBruteTransaction([]byte("invalidTransaction"), *invalidWallet)}, *invalidWallet)
 			}
 			// Tested phase
@@ -354,7 +355,7 @@ func TestPBFTConsensus_receiveCommitMessage(t *testing.T) {
 			consensus, testSocket := createTestSocket(tt.fromKnown)
 			_, block := implementInitState(consensus, tt.initState, nil)
 			if !tt.isBlocValid {
-				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(*consensus.getBlockchain(), consensus.GetValidator(), false)))
+				invalidWallet := Blockchain.NewWallet(fmt.Sprintf("NODE%d", getIdValidator(consensus.getBlockchain(), consensus.GetValidator(), false)))
 				block = consensus.getBlockchain().CreateBlock([]Blockchain.Transaction{*Blockchain.NewBruteTransaction([]byte("invalidTransaction"), *invalidWallet)}, *invalidWallet)
 			}
 			// Tested phase

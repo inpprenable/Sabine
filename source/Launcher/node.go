@@ -2,6 +2,7 @@ package Launcher
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"github.com/rs/zerolog/log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"pbftnode/source/Blockchain/Consensus"
 	"pbftnode/source/Blockchain/Socket"
 	"pbftnode/source/config"
+	"strconv"
 	"time"
 )
 
@@ -22,8 +24,6 @@ type NodeArg struct {
 	SaveFile      string
 	MultiSaveFile bool
 	ListeningPort string
-	AvgDelay      int
-	StdDelay      int
 	HttpChain     string
 	HttpMetric    string
 	Param         Blockchain.ConsensusParam
@@ -32,13 +32,23 @@ type NodeArg struct {
 	ControlType   string
 	Sleep         int
 	RegularSave   int
-	DelayType     string
+	DelayParam    DelayParam
+}
+
+// DelayParam Contains all the parameters referencing the configuration of the delay between nodes
+type DelayParam struct {
+	DelayType  string
+	AvgDelay   int
+	StdDelay   int
+	matAdj     [][]int
+	MatAdjPath string
 }
 
 func Node(arg NodeArg) {
 	var srv *http.Server
 	arg.init()
 	var Saver *Blockchain.Saver
+	defLoggerPanic()
 	defer arg.close()
 
 	if arg.Sleep != 0 {
@@ -52,8 +62,11 @@ func Node(arg NodeArg) {
 	}
 
 	var wallet = Blockchain.NewWallet(fmt.Sprintf("NODE%s", arg.NodeId))
+
+	arg.loadMatrix()
 	consensus := Consensus.NewPBFTStateConsensus(wallet, arg.NodeNumber, arg.Param)
-	delay := Socket.NewNodeDelay(createDelay(arg), true)
+
+	delay := Socket.NewNodeDelay(createDelay(arg.DelayParam, consensus.GetId()), true)
 	var comm = Socket.NewNetSocketBoot(consensus, arg.BootAddr, arg.ListeningPort, delay)
 	consensus.SetSocketHandler(comm)
 	comm.InitBootstrapedCo()
@@ -63,7 +76,7 @@ func Node(arg NodeArg) {
 	if arg.HttpMetric != "" {
 		consensus.SetHTTPViewer(arg.HttpMetric)
 	}
-	log.Printf("the expected first proposer is %d\n", consensus.BlockChain.GetProposerNumber())
+	log.Printf("the expected first proposer is %d\n", consensus.BlockChain.GetProposerId())
 	if arg.HttpChain != "" {
 		srv = Blockchain.HttpBlockchainViewer(consensus.BlockChain, arg.HttpChain)
 	}
@@ -80,7 +93,7 @@ func Node(arg NodeArg) {
 	if arg.RegularSave > 0 {
 		go func() {
 			ticker := time.NewTicker(time.Duration(arg.RegularSave) * time.Minute)
-			for _ = range ticker.C {
+			for range ticker.C {
 				consensus.BlockChain.Save()
 			}
 		}()
@@ -107,21 +120,65 @@ func openChainFile(saveFile string) (chainFile *os.File) {
 	return chainFile
 }
 
-func createDelay(arg NodeArg) Socket.ProbaDelay {
-
-	delayType := Socket.StrToDelayType(arg.DelayType)
-	switch delayType {
-	case Socket.NoDelaySt:
-		return Socket.NoDelay{}
-	case Socket.PoissonDelaySt:
-		return Socket.NewPoissonDelay(float64(arg.AvgDelay))
-	case Socket.NormalDelaySt:
-		return Socket.NewNormalDelay(float64(arg.AvgDelay), float64(arg.StdDelay))
-	case Socket.FixeDelaySt:
-		return Socket.NewFixeDelay(float64(arg.AvgDelay))
-	default:
-		return Socket.NoDelay{}
+func createDelay(arg DelayParam, nodeId int) Socket.DelayConfig {
+	delayType := Socket.ParseDelayType(arg.DelayType)
+	var matrix []int = nil
+	if arg.matAdj != nil {
+		matrix = arg.matAdj[nodeId]
 	}
+
+	return Socket.DelayConfig{
+		DelayType: delayType,
+		AvgDelay:  arg.AvgDelay,
+		StdDelay:  arg.StdDelay,
+		Matrix:    matrix,
+	}
+}
+
+// loadMatrix load the csv file containing the delay between nodes
+func (param *DelayParam) loadMatrix() {
+	if param.MatAdjPath != "" {
+		param.matAdj = readFullMatrix(param.MatAdjPath)
+	}
+}
+
+// loadMatrix load the csv file containing the delay between nodes
+func (param *NodeArg) loadMatrix() {
+	if param.DelayParam.MatAdjPath != "" {
+		param.DelayParam.matAdj = readFullMatrix(param.DelayParam.MatAdjPath)
+		param.Param.SelectorArgs.MatAdj = param.DelayParam.matAdj
+	}
+}
+
+func readFullMatrix(path string) [][]int {
+	csvFile, err := os.Open(path)
+	if err != nil {
+		log.Fatal().Msgf("Cannot open the CSV file, %s", err.Error())
+	}
+	csvlines, err := csv.NewReader(csvFile).ReadAll()
+	if err != nil {
+		log.Fatal().Msgf("Cannot read the CSV file, %s", err.Error())
+	}
+	nb_node := -1
+	var lineMatrix [][]int
+	for index, csvline := range csvlines {
+		if nb_node == -1 {
+			nb_node = len(csvline)
+			lineMatrix = make([][]int, nb_node)
+		}
+		lineMatrix[index] = make([]int, nb_node)
+		for i, s := range csvline {
+			delay, errVal := strconv.Atoi(s)
+			if errVal != nil {
+				log.Fatal().Msgf("One of the value cannot be cast : %s", s)
+			}
+			lineMatrix[index][i] = delay
+		}
+	}
+	err = csvFile.Close()
+	check(err)
+	log.Debug().Msg("Successfully import the adjacency matrix")
+	return lineMatrix
 }
 
 func end(srv *http.Server, comm *Socket.NetSocketBoot) {
@@ -135,4 +192,13 @@ func end(srv *http.Server, comm *Socket.NetSocketBoot) {
 	}
 	comm.Close()
 	//fmt.Println("adios")
+}
+
+func defLoggerPanic() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Panic().Msgf("Panic: %v", r)
+			os.Exit(1)
+		}
+	}()
 }

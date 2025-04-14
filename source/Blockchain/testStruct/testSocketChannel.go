@@ -23,7 +23,7 @@ type TestSocketChannel struct {
 	validator       Blockchain.ValidatorGetterInterf
 }
 
-func (socket *TestSocketChannel) UpdateDelay(parameter float64) {
+func (socket *TestSocketChannel) UpdateDelay(parameter int) {
 	socket.channel.UpdateDelay(parameter)
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 type NetSocketBoot struct {
-	netSocket
+	NetSocket
 	bootstrapIp string
 	listAddr    []string
 	id          int
@@ -33,7 +33,7 @@ func NewNetSocketBoot(consensus Blockchain.Consensus, bootstrap string, listenin
 	if try == 0 && err != nil {
 		log.Panic().Msgf("Error Connection to bootstrap Server: %s", err.Error())
 	}
-	retour := NetSocketBoot{netSocket: *NewNetSocket(consensus, listeningPort, delay), bootstrapIp: bootstrap}
+	retour := NetSocketBoot{NetSocket: *NewNetSocket(consensus, listeningPort, delay), bootstrapIp: bootstrap}
 
 	//Send the ID of the listening socket
 	encoder := gob.NewEncoder(conn)

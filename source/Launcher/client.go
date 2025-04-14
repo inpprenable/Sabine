@@ -17,9 +17,11 @@ import (
 
 type ClientArg struct {
 	BaseArg
-	Contact     string
-	NodeID      string
-	ByBootstrap bool
+	Contact       string
+	NodeID        string
+	NumberOfNode  int
+	ByBootstrap   bool
+	SelectionType Blockchain.SelectionValidatorType
 }
 
 func Client(arg ClientArg) {
@@ -43,7 +45,9 @@ func Client(arg ClientArg) {
 	encoder := gob.NewEncoder(conn)
 	decoder := gob.NewDecoder(conn)
 	validator := Blockchain.Validators{}
-	go handleBlockReturn(decoder, arg.interruptChan, validator)
+	validator.GenerateAddresses(arg.NumberOfNode)
+	selector := arg.SelectionType.CreateValidatorSelector(Blockchain.ArgsSelector{})
+	go handleBlockReturn(decoder, arg.interruptChan, &validator)
 	reader := bufio.NewReader(os.Stdin)
 	wallet := Blockchain.NewWallet("NODE" + arg.NodeID)
 
@@ -58,24 +62,26 @@ func Client(arg ClientArg) {
 			if err != nil {
 				log.Error().Msg(err.Error())
 			}
+			if !validator.IsSizeValid(i) {
+				err := fmt.Errorf("The given size %d is invalid, number of node: %d", i, validator.GetNumberOfValidator())
+				println(err.Error())
+			}
+			newListProposal := selector.GenerateNewValidatorListProposition(&validator, i, -1)
 			commande := Blockchain.Commande{
-				Order:     Blockchain.VarieValid,
-				Variation: i,
+				Order:           Blockchain.VarieValid,
+				Variation:       i,
+				NewValidatorSet: newListProposal,
 			}
 			transac = wallet.CreateTransaction(commande)
 			str, _ := json.MarshalIndent(transac, "", "  ")
-			str2, _ := json.MarshalIndent(commande, "", "  ")
 			fmt.Println(string(str))
-			fmt.Println(string(str2))
-			fmt.Println(i)
-			fmt.Println(res[1])
-			fmt.Println(strconv.ParseInt(res[1], 10, 64))
 		default:
 			transac = wallet.CreateBruteTransaction([]byte(input))
 		}
 		message := Blockchain.Message{
-			Flag: Blockchain.TransactionMess,
-			Data: transac,
+			Flag:        Blockchain.TransactionMess,
+			Data:        transac,
+			ToBroadcast: Blockchain.DefaultBehaviour,
 		}
 
 		err = encoder.Encode(message)
@@ -133,7 +139,7 @@ func getAContact(contact string) (string, int, []string) {
 	return retour, len(listContact), listContact
 }
 
-func handleBlockReturn(decoder *gob.Decoder, c chan os.Signal, validators Blockchain.Validators) {
+func handleBlockReturn(decoder *gob.Decoder, c chan os.Signal, validators *Blockchain.Validators) {
 	for len(c) == 0 {
 		var message Blockchain.Message
 		err := decoder.Decode(&message)

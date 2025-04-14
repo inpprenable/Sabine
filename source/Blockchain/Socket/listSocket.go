@@ -1,12 +1,13 @@
 package Socket
 
 import (
+	"bytes"
 	"github.com/rs/zerolog/log"
 	"net"
 	"pbftnode/source/Blockchain"
 )
 
-// Handler of the list of singleSocket in a netSocket
+// Handler of the list of singleSocket in a NetSocket
 type listSocket struct {
 	Blockchain.CloseHandler
 	listSocket   []*singleSocket
@@ -47,7 +48,8 @@ func newListSocket(consensus Blockchain.Consensus) *listSocket {
 // Generic broadcast, the message is sent to all nodes
 func (list *listSocket) broadcastMessage(message Blockchain.Message) {
 	for _, socket := range list.listSocket {
-		if socket != nil && (!list.consensus.IsPoANV() || socket.id < list.consensus.GetNumberOfValidator()) {
+		// if socket != nil && (!list.consensus.IsPoANV() || socket.id < list.consensus.GetNumberOfValidator()) {
+		if socket != nil && (!list.consensus.IsPoANV() || socket.id == -1 || list.consensus.IsActiveValidator(socket.publicKey)) {
 			socket.sendMessage(message)
 		}
 	}
@@ -60,7 +62,7 @@ func (list *listSocket) broadcastMessageNV(query queryBroadcast) {
 		log.Panic().Msgf("This Channel shouldn't be used")
 	}
 	for _, socket := range list.listSocket {
-		if socket != nil && socket.id >= list.consensus.GetNumberOfValidator() {
+		if socket != nil && !list.consensus.IsActiveValidator(socket.publicKey) {
 			socket.sendMessage(message)
 		}
 	}
@@ -167,7 +169,7 @@ func (list *listSocket) appendSingleSocketRoutine(query querySingle) {
 	query.canal <- true
 }
 
-//firstNilSocket select the index of the first nil socket in the list if exist, -1 otherwise
+// firstNilSocket select the index of the first nil socket in the list if exist, -1 otherwise
 func (list listSocket) firstNilSocket() int {
 	for i, socket := range list.listSocket {
 		if socket == nil {
@@ -194,9 +196,9 @@ func (list *listSocket) removeSingleRoutine(query querySingle) {
 }
 
 func (list *listSocket) transmitTransaction(message Blockchain.Message) {
-	proposer := list.consensus.GetProposerId()
+	proposer := list.consensus.GetProposer()
 	for _, socket := range list.listSocket {
-		if socket != nil && socket.id == proposer {
+		if socket != nil && bytes.Equal(socket.publicKey, proposer) {
 			socket.sendMessage(message)
 			return
 		}
@@ -235,7 +237,7 @@ func (list *listSocket) askIfExist(socket *singleSocket) bool {
 func (list *listSocket) updateDelay(delay NodeDelay) {
 	for _, socket := range list.listSocket {
 		if socket != nil {
-			socket.inNewDelay <- delay.NewSocketDelay()
+			socket.inNewDelay <- delay.NewSocketDelay(socket.id)
 		}
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"math/rand"
+	"time"
 )
 
 func GenKeyPair(seed []byte) ed25519.PrivateKey {
@@ -88,6 +90,29 @@ func (handler *CloseHandler) StopLoopRoutine() {
 func check(err error) {
 	if err != nil {
 		log.Error().Msgf("error %t \n-> %s", err, err)
-		panic(err)
+		log.Panic().Msg(err.Error())
 	}
+}
+
+// generateRandomList return a slide of dimension Size of different int lower than maxValue
+func generateRandomList(Size int, maxValue int, seed int64) []int {
+	randomList := arrange(maxValue)
+	if seed < 0 {
+		rand.Seed(time.Now().Unix())
+	} else {
+		rand.Seed(seed)
+	}
+	rand.Shuffle(len(randomList), func(i, j int) {
+		randomList[i], randomList[j] = randomList[j], randomList[i]
+	})
+	listValIndex := randomList[:Size]
+	return listValIndex
+}
+
+func arrange(size int) []int {
+	newList := make([]int, size)
+	for i := 0; i < size; i++ {
+		newList[i] = i
+	}
+	return newList
 }

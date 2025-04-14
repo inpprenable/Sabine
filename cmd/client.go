@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"pbftnode/source/Blockchain"
 	"pbftnode/source/Launcher"
 )
 
@@ -40,6 +41,7 @@ to quickly create a Cobra application.`,
 		clientArg.BaseArg = baseArg.NewBaseArg(logLevel)
 		clientArg.Contact = args[0]
 		clientArg.NodeID = args[1]
+		clientArg.SelectionType = Blockchain.ParseSelectionValidatorType(validatorSelector)
 		Launcher.Client(clientArg)
 	},
 }
@@ -47,6 +49,8 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(clientCmd)
 	clientCmd.Flags().BoolVarP(&clientArg.ByBootstrap, "Bootstrap", "b", false, "Connect to a random node by the bootstrap Server")
+	clientCmd.Flags().IntVarP(&clientArg.NumberOfNode, "NodeNumber", "N", Blockchain.NumberOfNodes, "The number of Nodes in the networks")
+	clientCmd.Flags().StringVar(&validatorSelector, "validationType", "Pivot", "Set the selection of validator {Pivot|Random|Centric}")
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command

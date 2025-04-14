@@ -31,10 +31,15 @@ func TestTransactionPool_GetTxForBloc(t *testing.T) {
 			}
 			time.Sleep(50 * time.Millisecond)
 			order := wallet.CreateTransaction(Commande{
-				Order:     VarieValid,
-				Variation: 0,
+				Order:           VarieValid,
+				Variation:       16,
+				NewValidatorSet: validator.GetNodeList(),
 			})
-			transactionPool.AddTransaction(*order)
+			resp := transactionPool.AddTransaction(*order)
+
+			if !resp {
+				t.Error("The transaction haven't be added in the pool")
+			}
 
 			txList := transactionPool.GetTxForBloc()
 			var present bool

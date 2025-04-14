@@ -12,5 +12,5 @@ type Sockets interface {
 }
 
 type UpdateDelay interface {
-	UpdateDelay(parameter float64)
+	UpdateDelay(parameter int)
 }

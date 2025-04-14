@@ -20,7 +20,10 @@ type Blockchain struct {
 	Save           func()
 	executedTxLock sync.RWMutex
 	metrics        *MetricHandler
-	SocketDelay    UpdateDelay
+	DelayUpdater   UpdateDelay
+	selector       ValidatorSelectorUpdateInter
+	proposer       ed25519.PublicKey
+	proposerID     int
 }
 
 type linkedBlock struct {
@@ -45,7 +48,7 @@ type ChainInterface interface {
 
 // NewBlockchain the constructor takes an argument validators class object
 // this is used to create a list of validators
-func NewBlockchain(validators ValidatorInterf, socketDelay UpdateDelay) (blockchain *Blockchain) {
+func NewBlockchain(validators ValidatorInterf, selector ValidatorSelectorUpdateInter, socketDelay UpdateDelay) (blockchain *Blockchain) {
 	firstBlock := newLinkedBlock(Genesis())
 	blockchain = &Blockchain{
 		//chain:         []Block{*Genesis()},
@@ -56,9 +59,11 @@ func NewBlockchain(validators ValidatorInterf, socketDelay UpdateDelay) (blockch
 		validatorList: validators,
 		executedTx:    newMapExecTxSec(),
 		Save:          func() {},
-		SocketDelay:   socketDelay,
+		selector:      selector,
+		DelayUpdater:  socketDelay,
 	}
 	blockchain.existingBlock[string(firstBlock.block.Hash)] = struct{}{}
+	blockchain.updateProposer()
 	return
 }
 
@@ -73,7 +78,7 @@ func (blockchain *Blockchain) addBlock(block Block) {
 	log.Debug().Msgf("NEW BLOCK ADDED TO CHAIN : n°%d", block.SequenceNb)
 }
 
-//CreateBlock wrapper function to create blocks
+// CreateBlock wrapper function to create blocks
 func (blockchain *Blockchain) CreateBlock(transactions []Transaction, wallet Wallet) *Block {
 	return blockchain.GetLastBLoc().CreateBlock(transactions, wallet)
 }
@@ -81,12 +86,11 @@ func (blockchain *Blockchain) CreateBlock(transactions []Transaction, wallet Wal
 // GetProposer calculates the next propsers by calculating a random index of the validators list
 // index is calculated using the hash of the latest block
 func (blockchain *Blockchain) GetProposer() ed25519.PublicKey {
-	index := blockchain.GetProposerNumber()
-	return blockchain.validatorList.GetValidatorOfIndex(index)
+	return blockchain.proposer
 }
 
-func (blockchain *Blockchain) GetProposerNumber() int {
-	return blockchain.GetLastBLoc().GetNextProposer(blockchain.validatorList.GetNumberOfValidator())
+func (blockchain *Blockchain) GetProposerId() int {
+	return blockchain.proposerID
 }
 
 func (blockchain *Blockchain) IsValidNewBlock(block Block) bool {
@@ -112,6 +116,7 @@ func (blockchain *Blockchain) AddUpdatedBlock(block Block, transacPool Transacti
 	/*Manque des champs*/
 	blockchain.addBlock(block)
 	blockchain.flushTransaction(&block, transacPool)
+	blockchain.updateProposer()
 }
 
 func (blockchain *Blockchain) flushTransaction(block *Block, transacPool TransactionPoolInterf) {
@@ -119,7 +124,9 @@ func (blockchain *Blockchain) flushTransaction(block *Block, transacPool Transac
 	for _, transaction := range block.Transactions {
 		commande, ok := transaction.TransaCore.Input.(Commande)
 		if ok {
+			log.Debug().Msg("The command will be applied")
 			blockchain.apply(commande)
+			log.Debug().Msg("The command was applied")
 		}
 		blockchain.executedTx.Add(transaction.Hash)
 		transacPool.RemoveTransaction(transaction)
@@ -162,15 +169,26 @@ func (blockchain *Blockchain) getIDOf(wallet Wallet) int {
 func (blockchain *Blockchain) apply(commande Commande) {
 	switch commande.Order {
 	case VarieValid:
-		newSize := blockchain.validatorList.GetNumberOfValidator() + commande.Variation
+		//newSize := blockchain.validatorList.GetNumberOfValidator() + commande.Variation
+		newSize := len(commande.NewValidatorSet)
 		if blockchain.validatorList.IsSizeValid(newSize) {
-			blockchain.validatorList.SetNumberOfNode(newSize)
+			//blockchain.validatorList.SetNumberOfNode(newSize)
+			updated := blockchain.validatorList.SetNewListOfValidator(commande.NewValidatorSet)
+			if updated {
+				listValIndex := blockchain.validatorList.getIndexOfValidators()
+				blockchain.selector.Update(listValIndex)
+			}
 			log.Debug().Msgf("Number of Active Node %d", blockchain.validatorList.GetNumberOfValidator())
+			blockchain.validatorList.logAllValidator()
+		} else {
+			log.Error().Msgf("The new size of block is invalid, new size :%d", newSize)
 		}
 	case ChangeDelay:
-		if blockchain.SocketDelay != nil {
-			blockchain.SocketDelay.UpdateDelay(float64(commande.Variation))
+		if blockchain.DelayUpdater != nil {
+			blockchain.DelayUpdater.UpdateDelay(commande.Variation)
 		}
+	default:
+		log.Error().Msgf("Unknown message type %d", commande.Order)
 	}
 }
 
@@ -181,7 +199,7 @@ func (blockchain *Blockchain) ExistTx(transactionHash []byte) bool {
 	return ok
 }
 
-//GetChainJson Return the blockchain in the Json format
+// GetChainJson Return the blockchain in the Json format
 func (blockchain *Blockchain) GetChainJson() []byte {
 	byted, err := json.MarshalIndent(*blockchain.GetBlocs(), "", "  ")
 	if err != nil {
@@ -224,4 +242,13 @@ func (blockchain *Blockchain) ExistBlockOfHash(hash []byte) bool {
 
 func (blockchain *Blockchain) SetMetricHandler(handler *MetricHandler) {
 	blockchain.metrics = handler
+}
+
+// updateProposer change the current proposer for the next
+func (blockchain *Blockchain) updateProposer() {
+	lastBlock := blockchain.lastBlock.block
+	nbVal := blockchain.validatorList.GetNumberOfValidator()
+	index := int(lastBlock.Hash[0]) % nbVal
+	blockchain.proposerID, blockchain.proposer = blockchain.validatorList.GetActiveValidatorIndexOfValue(index)
+	log.Debug().Msgf("The next proposer is of index %d", blockchain.proposerID)
 }

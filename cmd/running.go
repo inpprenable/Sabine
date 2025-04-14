@@ -42,7 +42,7 @@ to quickly create a Cobra application.`,
 		var err error
 		zombieArgCreate(args)
 		runArg.ZombieArg = zombieArg
-		runArg.ZombieArg.NbOfNode, err = strconv.Atoi(args[3])
+		runArg.ZombieArg.NumberOfNode, err = strconv.Atoi(args[3])
 		checkInt(err)
 		runArg.Throughput, err = strconv.Atoi(args[4])
 		checkInt(err)

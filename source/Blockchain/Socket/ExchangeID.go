@@ -6,7 +6,7 @@ import (
 	"net"
 )
 
-func ExchangeIdServer(netsock *netSocket, conn net.Conn) int {
+func ExchangeIdServer(netsock *NetSocket, conn net.Conn) int {
 	var idSend int = -1
 	if netsock != nil {
 		idSend = netsock.consensus.GetId()
@@ -16,7 +16,7 @@ func ExchangeIdServer(netsock *netSocket, conn net.Conn) int {
 	return id
 }
 
-func ExchangeIdClient(netsock *netSocket, conn net.Conn) int {
+func ExchangeIdClient(netsock *NetSocket, conn net.Conn) int {
 	id := receiveId(conn)
 	var idSend int = -1
 	if netsock != nil {

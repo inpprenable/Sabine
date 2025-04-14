@@ -46,10 +46,10 @@ func ZombieTx(arg ZombieTxArg) {
 
 	Contact := arg.Contact
 	if arg.ByBootstrap {
-		for nContact < arg.NbOfNode {
+		for nContact < arg.NumberOfNode {
 			Contact, nContact, listContact = getAContact(arg.Contact)
 			fmt.Printf("%d nodes are connected to the bootstrap server", nContact)
-			if nContact < arg.NbOfNode {
+			if nContact < arg.NumberOfNode {
 				time.Sleep(500 * time.Millisecond)
 			}
 		}
@@ -62,26 +62,27 @@ func ZombieTx(arg ZombieTxArg) {
 		mySender = newContacts(Contact, listContact)
 	}
 
-	//conn := connectWith(Contact)
-	//listContact.conn = &conn
+	validator := Blockchain.Validators{}
+	validator.GenerateAddresses(arg.NumberOfNode)
+	selector := arg.SelectionType.CreateValidatorSelector(Blockchain.ArgsSelector{})
 
 	go stopSleep(arg.interruptChan, &continu, nil, nil)
 	//encoder := gob.NewEncoder(conn)
 	wallet := Blockchain.NewWallet("NODE" + arg.NodeID)
 
+	newListProposal := selector.GenerateNewValidatorListProposition(&validator, arg.NbVal, -1)
+	//log.Info().Msgf("Ask for a number of node of %d", arg.NbVal)
 	mySender.Add(1)
 	mySender.send(*wallet.CreateTransaction(Blockchain.Commande{
-		Order:     Blockchain.VarieValid,
-		Variation: -arg.Reducing,
+		Order:           Blockchain.VarieValid,
+		Variation:       arg.NbVal,
+		NewValidatorSet: newListProposal,
 	}), true, Blockchain.AskToBroadcast)
 	mySender.Wait()
-
-	//sendTx(*wallet.CreateTransaction(Blockchain.Commande{
-	//	Order:     Blockchain.VarieValid,
-	//	Variation: -arg.Reducing,
-	//}), encoder, &listContact, false)
 	time.Sleep(500 * time.Millisecond)
-	fmt.Println("The number of validator should be reduced")
+	log.Info().Msgf("The number of validator should be reduced to %d", arg.NbVal)
+	fmt.Println(fmt.Sprintf("The number of validator should be reduced to %d", arg.NbVal))
+	fmt.Printf("the size of the suggested is %d, nb val required %d on a network of %d nodes \n", len(newListProposal), arg.NbVal, arg.NumberOfNode)
 	timeStart := time.Now()
 	go delayRoutine(mySender, arg.DelayScenario, wallet)
 	for y, scenarii := range arg.Scenario {

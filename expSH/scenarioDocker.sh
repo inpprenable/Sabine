@@ -35,6 +35,7 @@ log=$log
 echo "$resume" > "$EXPDIR"/scenario.txt
 
 shPath=$(dirname "$0")
+# echo "composeGen_swarm.sh [fileName] [NumberOfNode] [FCB] [lag ?]"
 "$shPath/composeGen.sh" $fileName $EXPDIR $NbNode $FCB $lag
 docker-compose -f $fileName up -d
 

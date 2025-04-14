@@ -17,16 +17,19 @@ const (
 )
 
 type ConsensusParam struct {
-	Broadcast        bool
-	PoANV            bool
-	RamOpt           bool
-	MetricSaveFile   string
-	TickerSave       int
-	ControlType      ControlType
-	ControlPeriod    int
-	RefreshingPeriod int
-	Behavior         OverloadBehavior
-	ModelFile        string
+	Broadcast           bool
+	PoANV               bool
+	RamOpt              bool
+	MetricSaveFile      string
+	TickerSave          int
+	ControlType         ControlType
+	ControlPeriod       int
+	RefreshingPeriod    int
+	Behavior            OverloadBehavior
+	ModelFile           string
+	SelectionType       SelectionValidatorType
+	SelectorArgs        ArgsSelector
+	AcceptTxFromUnknown bool
 }
 
 // String Return the string associate to MessageType
@@ -54,8 +57,9 @@ type Consensus interface {
 	MakeTransaction(Commande) *Transaction
 	IsPoANV() bool
 	MessageHandler(message Message)
+	// GetId returns the id of the current node
 	GetId() int
-	GetProposerId() int
+	GetProposer() ed25519.PublicKey
 	GetSeqNb() int
 	MinApprovals() int
 	Close()
@@ -64,6 +68,9 @@ type Consensus interface {
 	ReceiveTrustedMess(message Message)
 	SetControlInstruction(instruct bool)
 	GetControl() ControlType
+	GenerateNewValidatorListProposition(newSize int) []ed25519.PublicKey
+	IsActiveValidator(key ed25519.PublicKey) bool
+	GetPubKeyofId(int) ed25519.PublicKey
 }
 
 type writeChainInterf interface {
@@ -94,7 +101,10 @@ type Payload interface {
 type BroadcastType uint8
 
 const (
-	DefaultBehavour BroadcastType = iota
+	// DefaultBehaviour the transaction is transmitted to the proposer
+	DefaultBehaviour BroadcastType = iota
+	// AskToBroadcast the transaction is transmitted to all nodes
 	AskToBroadcast
+	// DontBroadcast the transaction is not transmitted to other nodes
 	DontBroadcast
 )

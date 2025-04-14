@@ -2,6 +2,7 @@ package Consensus
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"pbftnode/source/Blockchain"
@@ -22,44 +23,50 @@ type CoreConsensus struct {
 	Broadcast       bool
 	PoANV           bool
 	controlType     Blockchain.ControlType
+	selector        Blockchain.ValidatorSelector
+	id              int
 }
 
-type ConsensusArgs struct {
+type consensusArgs struct {
 	MetricSaveFile   string
 	TickerSave       int
 	ControlType      Blockchain.ControlType
-	Beahavior        Blockchain.OverloadBehavior
+	Behavior         Blockchain.OverloadBehavior
 	RefreshingPeriod int
+	SelectionType    Blockchain.SelectionValidatorType
+	selectorArgs     Blockchain.ArgsSelector
 }
 
-func NewCoreConsensus(wallet *Blockchain.Wallet, nbNode int, metricOpt ConsensusArgs) (retour *CoreConsensus) {
+func NewCoreConsensus(wallet *Blockchain.Wallet, nbNode int, args consensusArgs) (retour *CoreConsensus) {
 	var validator Blockchain.ValidatorInterf = &Blockchain.Validators{}
-	var transactionpool = Blockchain.NewTransactionPool(validator, metricOpt.Beahavior)
+	validator.GenerateAddresses(nbNode)
+	var transactionPool = Blockchain.NewTransactionPool(validator, args.Behavior)
 	var preparePool = Blockchain.NewPreparePool()
 	var commitPool = Blockchain.NewCommitPool()
 	var messagePool = Blockchain.NewMessagePool()
 	var consensus = CoreConsensus{
-		TransactionPool: transactionpool,
+		TransactionPool: transactionPool,
 		Wallet:          *wallet,
 		BlockPool:       Blockchain.NewBlockPool(),
 		PreparePool:     preparePool,
 		CommitPool:      commitPool,
 		MessagePool:     messagePool,
 		Validators:      validator,
-		controlType:     metricOpt.ControlType,
+		controlType:     args.ControlType,
+		id:              -1,
+		selector:        args.SelectionType.CreateValidatorSelector(args.selectorArgs),
 	}
 	retour = &consensus
-	var blockchain = Blockchain.NewBlockchain(validator, nil)
+	var blockchain = Blockchain.NewBlockchain(validator, consensus.selector, nil)
 	retour.BlockChain = blockchain
-	consensus.Validators.GenerateAddresses(nbNode)
-	consensus.Metrics = Blockchain.NewMetricHandler(retour.BlockChain, validator, metricOpt.MetricSaveFile, metricOpt.TickerSave, metricOpt.RefreshingPeriod)
+	consensus.Metrics = Blockchain.NewMetricHandler(retour.BlockChain, validator, args.MetricSaveFile, args.TickerSave, args.RefreshingPeriod)
 	consensus.BlockChain.SetMetricHandler(consensus.Metrics)
 	consensus.TransactionPool.SetMetricHandler(consensus.Metrics)
 	return retour
 }
 
-func (consensus CoreConsensus) GetProposerId() int {
-	return consensus.BlockChain.GetProposerNumber()
+func (consensus CoreConsensus) GetProposer() ed25519.PublicKey {
+	return consensus.BlockChain.GetProposer()
 }
 
 func (consensus CoreConsensus) GetNumberOfValidator() int {
@@ -74,8 +81,12 @@ func (consensus CoreConsensus) MinApprovals() int {
 	return (consensus.Validators.GetNumberOfValidator() * 2 / 3) + 1
 }
 
-func (consensus CoreConsensus) GetId() int {
-	return consensus.Validators.GetIndexOfValidator(consensus.Wallet.PublicKey())
+// GetId returns the id of the current node
+func (consensus *CoreConsensus) GetId() int {
+	if consensus.id < 0 {
+		consensus.id = consensus.Validators.GetIndexOfValidator(consensus.Wallet.PublicKey())
+	}
+	return consensus.id
 }
 
 // IsProposer return if the actual node is the actual proposer of the chain
@@ -180,5 +191,17 @@ func (consensus CoreConsensus) GetControl() Blockchain.ControlType {
 
 func (consensus *CoreConsensus) SetSocketHandler(sockets Blockchain.Sockets) {
 	consensus.SocketHandler = sockets
-	consensus.BlockChain.SocketDelay = sockets
+	consensus.BlockChain.DelayUpdater = sockets
+}
+
+func (consensus CoreConsensus) IsActiveValidator(key ed25519.PublicKey) bool {
+	return consensus.Validators.IsActiveValidator(key)
+}
+
+func (consensus CoreConsensus) GetPubKeyofId(id int) ed25519.PublicKey {
+	if id == -1 {
+		return Blockchain.GenPubKeyOfId(id)
+	}
+	return consensus.Validators.GetValidatorOfIndex(id)
+
 }

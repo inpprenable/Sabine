@@ -25,9 +25,10 @@ import (
 )
 
 var (
-	nodeArg        Launcher.NodeArg
-	controlType    string
-	behaviorTxPool string
+	nodeArg           Launcher.NodeArg
+	controlType       string
+	behaviorTxPool    string
+	validatorSelector string
 )
 
 // nodeCmd represents the node command
@@ -53,7 +54,7 @@ to quickly create a Cobra application.`,
 		}
 		nodeArg.Param.ControlType = Blockchain.ControlTypeStr(controlType)
 		nodeArg.Param.Behavior = Blockchain.StrToBehavior(behaviorTxPool)
-
+		nodeArg.Param.SelectionType = Blockchain.ParseSelectionValidatorType(validatorSelector)
 		Launcher.Node(nodeArg)
 	},
 }
@@ -65,9 +66,9 @@ func init() {
 	nodeCmd.Flags().IntVarP(&nodeArg.NodeNumber, "NodeNumber", "N", config.NumberOfNodes, "The number of Nodes in the networks")
 	nodeCmd.Flags().BoolVar(&nodeArg.Param.PoANV, "PoA", false, "Use it if you want the non Validator listen from the proposer")
 	nodeCmd.Flags().StringVar(&nodeArg.SaveFile, "chainfile", "", "The file used to store the blockchain")
-	nodeCmd.Flags().IntVar(&nodeArg.AvgDelay, "avgDelay", 0, "Additional average delay of transition (ms)")
-	nodeCmd.Flags().StringVar(&nodeArg.DelayType, "delayType", "NoDelay", "Delay type (if avgDelay>0) {NoDelay|Normal|Poisson|Fix}")
-	nodeCmd.Flags().IntVar(&nodeArg.StdDelay, "stdDelay", 10, "The standard deviation for the additional delay, if normal law")
+	nodeCmd.Flags().IntVar(&nodeArg.DelayParam.AvgDelay, "avgDelay", 0, "Additional average delay of transition (ms)")
+	nodeCmd.Flags().StringVar(&nodeArg.DelayParam.DelayType, "delayType", "NoDelay", "Delay type (if avgDelay>0) {NoDelay|Normal|Poisson|Fix}")
+	nodeCmd.Flags().IntVar(&nodeArg.DelayParam.StdDelay, "stdDelay", 10, "The standard deviation for the additional delay, if normal law")
 	nodeCmd.Flags().StringVar(&nodeArg.HttpChain, "httpChain", "", "The HTTP port to export the chain")
 	nodeCmd.Flags().StringVar(&nodeArg.HttpMetric, "httpMetric", "", "The HTTP port to view current data")
 	nodeCmd.Flags().BoolVar(&nodeArg.Param.RamOpt, "RamOpt", false, "Use it to remove old message")
@@ -84,6 +85,11 @@ func init() {
 	nodeCmd.Flags().IntVar(&nodeArg.Param.RefreshingPeriod, "RefreshingPeriod", 1, "Change the refreshing Period of metrics computation (in seconds)")
 	nodeCmd.Flags().IntVar(&nodeArg.Param.ControlPeriod, "ControlPeriod", 10, "Change the control period of FCB (x * RefreshingPeriod)")
 	nodeCmd.Flags().BoolVar(&nodeArg.MultiSaveFile, "multiSaveFile", false, "Use it to save on multiple files instead of one")
+
+	nodeCmd.Flags().StringVar(&nodeArg.DelayParam.MatAdjPath, "adjMatrix", "", "Set the json file corresponding to a adjacency matrix to simulate relation between nodes")
+	nodeCmd.Flags().StringVar(&validatorSelector, "validationType", "Pivot", "Set the selection of validator {Pivot|Random|Centric}")
+	nodeCmd.Flags().BoolVar(&nodeArg.Param.AcceptTxFromUnknown, "acceptUnknownTx", false, "Accept transaction from unknown nodes")
+	nodeCmd.Flags().Float64Var(&nodeArg.Param.SelectorArgs.Gamma, "gamma", 1., "Value of Gamma in the Centric Selection")
 
 	// Here you will define your flags and configuration settings.
 

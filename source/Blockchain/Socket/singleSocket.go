@@ -1,6 +1,7 @@
 package Socket
 
 import (
+	"crypto/ed25519"
 	"encoding/gob"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -23,6 +24,7 @@ type singleSocket struct {
 	toClose    *chan bool
 	loopChan   chan bool
 	id         int
+	publicKey  ed25519.PublicKey
 	delay      *SocketDelay
 	once       sync.Once
 	inNewDelay chan *SocketDelay

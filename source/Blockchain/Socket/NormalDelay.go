@@ -16,31 +16,58 @@ const (
 	FixeDelaySt
 )
 
-func StrToDelayType(behavior string) DelayType {
-	switch behavior {
-	case "NoDelay":
-		return NoDelaySt
-	case "Normal":
-		return NormalDelaySt
-	case "Poisson":
-		return PoissonDelaySt
-	case "Fix":
-		return FixeDelaySt
-	default:
+var delayStMap = map[string]DelayType{
+	"NoDelay": NoDelaySt,
+	"Normal":  NormalDelaySt,
+	"Poisson": PoissonDelaySt,
+	"Fix":     FixeDelaySt,
+}
+
+func ParseDelayType(behavior string) DelayType {
+	c, ok := delayStMap[behavior]
+	if !ok {
 		log.Error().Msgf("The string %s is not a delay type", behavior)
 		return NoDelaySt
+	}
+	return c
+}
+
+func (dType DelayType) delayTypeToProbaDelay(avgDelay float64, stdDelay float64) ProbaDelay {
+	if avgDelay == 0 {
+		return NoDelay{}
+	}
+	switch dType {
+	case FixeDelaySt:
+		return NewFixeDelay(avgDelay)
+	case NoDelaySt:
+		return NoDelay{}
+	case NormalDelaySt:
+		return NewNormalDelay(avgDelay, stdDelay)
+	case PoissonDelaySt:
+		return NewPoissonDelay(avgDelay)
+	default:
+		return NoDelay{}
 	}
 }
 
 type ProbaDelay interface {
-	newDelay() float64
+	NewDelay() float64
 	newProbaDelay() ProbaDelay
 	copy() ProbaDelay
-	UpdateDelay(float642 float64) ProbaDelay
 }
 
+type DelayConfig struct {
+	DelayType DelayType
+	AvgDelay  int
+	StdDelay  int
+	// Contains the associated line of the Matrix adjacency
+	Matrix []int
+}
+
+// NodeDelay Each node contains a unique NodeDelay used to generate other delay for each socket
 type NodeDelay struct {
-	ProbaDelay
+	DelayConfig
+
 	// Set true to have same parameter on all nodes
 	standard bool
 }
@@ -49,29 +76,42 @@ type SocketDelay struct {
 	ProbaDelay
 }
 
-func NewNodeDelay(delay ProbaDelay, isStandard bool) *NodeDelay {
-	norm, ok_norm := delay.(NormalDelay)
-	poisson, ok_poisson := delay.(PoissonDelay)
-	if delay == nil || (ok_norm && norm.mean == 0) || (ok_poisson && poisson.parameter == 0) {
-		return &NodeDelay{
+func NewNodeDelay(delayConfig DelayConfig, isStandard bool) *NodeDelay {
+	return &NodeDelay{delayConfig, isStandard}
+}
+
+func NewNodeDelayNoDelay() *NodeDelay {
+	return &NodeDelay{
+		DelayConfig: DelayConfig{
+			DelayType: NoDelaySt,
+		},
+		standard: true,
+	}
+}
+
+func (node NodeDelay) NewSocketDelay(idNode int) *SocketDelay {
+	// In case the node is the dealer
+	if idNode == -1 {
+		return &SocketDelay{
 			ProbaDelay: NoDelay{},
-			standard:   true,
 		}
 	}
-	return &NodeDelay{delay, isStandard}
-}
-
-func (node NodeDelay) NewSocketDelay() *SocketDelay {
-	if node.standard {
-		return &SocketDelay{node.copy()}
+	var avgDelayNode float64
+	if node.Matrix == nil {
+		avgDelayNode = float64(node.AvgDelay)
 	} else {
-		return &SocketDelay{node.newProbaDelay()}
+		if idNode >= len(node.Matrix) {
+			log.Panic().Msgf("Index out of range, get id %d on a limit of %d", idNode, len(node.Matrix))
+		}
+		avgDelayNode = float64(node.Matrix[idNode])
+	}
+	if node.standard {
+		return &SocketDelay{node.DelayType.delayTypeToProbaDelay(avgDelayNode, float64(node.StdDelay))}
+	} else {
+		newAvgValue := node.DelayType.delayTypeToProbaDelay(avgDelayNode, float64(node.StdDelay)).NewDelay()
+		return &SocketDelay{node.DelayType.delayTypeToProbaDelay(newAvgValue, float64(node.StdDelay))}
 	}
 }
-
-//func (socket *SocketDelay) updateDelay(parameter float64) {
-//	socket.ProbaDelay = socket.ProbaDelay.updateDelay(parameter)
-//}
 
 type NormalDelay struct {
 	stdDev float64
@@ -82,7 +122,7 @@ func NewNormalDelay(mean float64, stdDev float64) NormalDelay {
 	return NormalDelay{stdDev: stdDev, mean: mean}
 }
 
-func (normal NormalDelay) newDelay() float64 {
+func (normal NormalDelay) NewDelay() float64 {
 	var delay float64
 	for delay <= 0 {
 		delay = rand.NormFloat64()*normal.stdDev + normal.mean
@@ -93,7 +133,7 @@ func (normal NormalDelay) newDelay() float64 {
 func (normal NormalDelay) newProbaDelay() ProbaDelay {
 	return NormalDelay{
 		stdDev: normal.stdDev,
-		mean:   normal.newDelay(),
+		mean:   normal.NewDelay(),
 	}
 }
 
@@ -104,23 +144,18 @@ func (normal NormalDelay) copy() ProbaDelay {
 	}
 }
 
-func (normal NormalDelay) UpdateDelay(newMean float64) ProbaDelay {
-	normal.mean = newMean
-	return normal
-}
-
 func (socket SocketDelay) GetSleepNewDelay() time.Duration {
-	return time.Duration(socket.newDelay()) * time.Millisecond
+	return time.Duration(socket.NewDelay()) * time.Millisecond
 }
 
 func (socket SocketDelay) SleepNewDelay() {
-	delay := socket.newDelay()
+	delay := socket.NewDelay()
 	time.Sleep(time.Duration(delay) * time.Millisecond)
 }
 
 type NoDelay struct{}
 
-func (delay NoDelay) newDelay() float64 {
+func (delay NoDelay) NewDelay() float64 {
 	return 0
 }
 
@@ -131,8 +166,6 @@ func (delay NoDelay) newProbaDelay() ProbaDelay {
 func (delay NoDelay) copy() ProbaDelay {
 	return NoDelay{}
 }
-
-func (delay NoDelay) UpdateDelay(float64) ProbaDelay { return delay }
 
 type PoissonDelay struct {
 	parameter  float64
@@ -145,47 +178,34 @@ func NewPoissonDelay(parameter float64) PoissonDelay {
 	}}
 }
 
-func (poisson PoissonDelay) newDelay() float64 {
+func (poisson PoissonDelay) NewDelay() float64 {
 	return poisson.poissonLaw.Rand()
 }
 
 func (poisson PoissonDelay) newProbaDelay() ProbaDelay {
-	return NewPoissonDelay(poisson.newDelay())
+	return NewPoissonDelay(poisson.NewDelay())
 }
 
 func (poisson PoissonDelay) copy() ProbaDelay {
 	return NewPoissonDelay(poisson.parameter)
 }
 
-func (poisson PoissonDelay) UpdateDelay(parameter float64) ProbaDelay {
-	poisson.parameter = parameter
-	poisson.poissonLaw = distuv.Poisson{
-		Lambda: parameter,
-	}
-	return poisson
-}
-
-type fixeDelay struct {
+type FixeDelay struct {
 	parameter float64
 }
 
-func NewFixeDelay(parameter float64) *fixeDelay {
-	return &fixeDelay{parameter: parameter}
+func NewFixeDelay(parameter float64) FixeDelay {
+	return FixeDelay{parameter: parameter}
 }
 
-func (delay fixeDelay) newDelay() float64 {
+func (delay FixeDelay) NewDelay() float64 {
 	return delay.parameter
 }
 
-func (delay fixeDelay) newProbaDelay() ProbaDelay {
-	return fixeDelay{parameter: delay.parameter}
+func (delay FixeDelay) newProbaDelay() ProbaDelay {
+	return FixeDelay{parameter: delay.parameter}
 }
 
-func (delay fixeDelay) copy() ProbaDelay {
-	return fixeDelay{parameter: delay.parameter}
-}
-
-func (delay fixeDelay) UpdateDelay(parameter float64) ProbaDelay {
-	delay.parameter = parameter
-	return delay
+func (delay FixeDelay) copy() ProbaDelay {
+	return FixeDelay{parameter: delay.parameter}
 }

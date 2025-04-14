@@ -1,6 +1,7 @@
 package Socket
 
 import (
+	"crypto/ed25519"
 	"encoding/gob"
 	"github.com/rs/zerolog/log"
 	"net"
@@ -13,7 +14,7 @@ const (
 	connType = "tcp"
 )
 
-type netSocket struct {
+type NetSocket struct {
 	listSocket   *listSocket
 	incoming     chan Blockchain.Message
 	sockListener net.Listener
@@ -30,7 +31,7 @@ type queryBroadcast struct {
 	back    chan bool
 }
 
-func (netsock *netSocket) BroadcastMessageNV(message Blockchain.Message) {
+func (netsock *NetSocket) BroadcastMessageNV(message Blockchain.Message) {
 	if !netsock.stop {
 		query := queryBroadcast{
 			message: message,
@@ -42,16 +43,16 @@ func (netsock *netSocket) BroadcastMessageNV(message Blockchain.Message) {
 	}
 }
 
-func NewNetSocket(consensus Blockchain.Consensus, port string, delay *NodeDelay) *netSocket {
+func NewNetSocket(consensus Blockchain.Consensus, port string, delay *NodeDelay) *NetSocket {
 	GobLoader()
-	var netSocket = netSocket{
+	var netSocket = NetSocket{
 		incoming:  make(chan Blockchain.Message),
 		toClose:   make(chan bool, 1),
 		loopChan:  make(chan bool, 2),
 		consensus: consensus,
 		nodeDelay: delay,
 	}
-	//netSocket.toClose = false
+	//NetSocket.toClose = false
 	netSocket.listSocket = newListSocket(consensus)
 	netSocket.killer = newSocketKiller(netSocket.listSocket)
 	var err error
@@ -77,9 +78,10 @@ func GobLoader() {
 	gob.Register(Blockchain.BrutData{})
 	gob.Register(Blockchain.Commande{})
 	gob.Register(Blockchain.BlockMsg{})
+	gob.Register(ed25519.PublicKey{})
 }
 
-func (netsock *netSocket) serverLoop() {
+func (netsock *NetSocket) serverLoop() {
 	for netsock.sockListener != nil {
 		conn, err := netsock.sockListener.Accept()
 		if err != nil {
@@ -100,7 +102,7 @@ func (netsock *netSocket) serverLoop() {
 	netsock.loopChan <- true
 }
 
-func (netsock *netSocket) manageMessage() {
+func (netsock *NetSocket) manageMessage() {
 	for message := range netsock.incoming {
 		//log.Tracef("Received,\tfrom: %d,\ttype: %s,\tref: %s",1, Blockchain.String(message.Flag), message.Data.GetHashPayload())
 		netsock.consensus.MessageHandler(message)
@@ -108,7 +110,7 @@ func (netsock *netSocket) manageMessage() {
 	netsock.loopChan <- true
 }
 
-func (netsock *netSocket) InitialiseConnection(listAddrPort []string) {
+func (netsock *NetSocket) InitialiseConnection(listAddrPort []string) {
 
 	for _, addrPort := range listAddrPort {
 		conn, err := net.Dial(connType, addrPort)
@@ -121,28 +123,28 @@ func (netsock *netSocket) InitialiseConnection(listAddrPort []string) {
 	}
 }
 
-func (netsock *netSocket) BroadcastMessage(message Blockchain.Message) {
+func (netsock *NetSocket) BroadcastMessage(message Blockchain.Message) {
 	if !netsock.stop {
 		netsock.listSocket.inMessage <- message
 	}
 }
 
-func (netsock *netSocket) newSingleSocket(conn *net.Conn, id int) *singleSocket {
+func (netsock *NetSocket) newSingleSocket(conn *net.Conn, id int) *singleSocket {
 	var waitGroup sync.WaitGroup
 	var socket = singleSocket{
-		wait:     &waitGroup,
-		conn:     *conn,
-		outcome:  make(chan Blockchain.Message),
-		incoming: &(netsock.incoming),
-		killer:   &(netsock.killer),
-		dec:      gob.NewDecoder(*conn),
-		encoder:  gob.NewEncoder(*conn),
-		toClose:  &netsock.toClose,
-		loopChan: make(chan bool, 2),
-		id:       id,
-		//logger:   log.WithFields(log.Fields{"Status": "Msg Received", "From": id}),
+		wait:       &waitGroup,
+		conn:       *conn,
+		outcome:    make(chan Blockchain.Message),
+		incoming:   &(netsock.incoming),
+		killer:     &(netsock.killer),
+		dec:        gob.NewDecoder(*conn),
+		encoder:    gob.NewEncoder(*conn),
+		toClose:    &netsock.toClose,
+		loopChan:   make(chan bool, 2),
+		id:         id,
+		publicKey:  netsock.consensus.GetPubKeyofId(id),
 		logger:     log.With().Str("Status", "Msg Received").Int("From", id).Logger(),
-		delay:      netsock.nodeDelay.NewSocketDelay(),
+		delay:      netsock.nodeDelay.NewSocketDelay(id),
 		inNewDelay: make(chan *SocketDelay, 1),
 	}
 	go socket.outcomeGoroutine()
@@ -151,8 +153,8 @@ func (netsock *netSocket) newSingleSocket(conn *net.Conn, id int) *singleSocket 
 	return &socket
 }
 
-//handleNewConnection checks if the connection already exist, otherwise inserts in the first available element of the list
-func (netsock *netSocket) handleNewConnection(socket net.Conn, id int) {
+// handleNewConnection checks if the connection already exist, otherwise inserts in the first available element of the list
+func (netsock *NetSocket) handleNewConnection(socket net.Conn, id int) {
 
 	if netsock.listSocket.knowAddr(socket.RemoteAddr()) {
 		log.Info().Msg("socket is already known")
@@ -168,8 +170,8 @@ func (netsock *netSocket) handleNewConnection(socket net.Conn, id int) {
 	log.Printf("connected with %s from %s", socket.RemoteAddr(), socket.LocalAddr())
 }
 
-//Close Will close all existing socket
-func (netsock *netSocket) Close() {
+// Close Will close all existing socket
+func (netsock *NetSocket) Close() {
 	netsock.stop = true
 	netsock.toClose <- true
 
@@ -202,13 +204,13 @@ func (netsock *netSocket) Close() {
 	log.Debug().Msg("Socket Closed")
 }
 
-func (netsocket *netSocket) TransmitTransaction(message Blockchain.Message) {
+func (netsocket *NetSocket) TransmitTransaction(message Blockchain.Message) {
 	if !netsocket.stop {
 		netsocket.listSocket.inTransac <- message
 	}
 }
 
-func (netsock *netSocket) UpdateDelay(parameter float64) {
-	netsock.nodeDelay.ProbaDelay = netsock.nodeDelay.UpdateDelay(parameter)
+func (netsock *NetSocket) UpdateDelay(parameter int) {
+	netsock.nodeDelay.AvgDelay = parameter
 	netsock.listSocket.inNewDelay <- *netsock.nodeDelay
 }

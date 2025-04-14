@@ -66,9 +66,9 @@ func TestValidator_old(t *testing.T) {
 	validator.GenerateAddresses(5)
 	walletExample := NewWallet("example")
 	switch {
-	case len(validator.List) != 5:
-		t.Errorf("No 5 elements in the validator : %d instead of %d", len(validator.List), 5)
-	case !validator.IsActiveValidator(validator.List[2]):
+	case len(validator.GetValidatorList()) != 5:
+		t.Errorf("No 5 elements in the validator : %d instead of %d", len(validator.GetValidatorList()), 5)
+	case !validator.IsActiveValidator(validator.GetValidatorList()[2]):
 		t.Errorf("2nd Element non present in the validator")
 	case validator.IsActiveValidator(walletExample.PublicKey()):
 		t.Errorf("Mismatch a non existing Wallet")
@@ -130,7 +130,7 @@ func TestBlock2(t *testing.T) {
 func TestBlockPool(t *testing.T) {
 	genesis := Genesis()
 	walletExample := NewWallet("example")
-	var pool BlockPool
+	var pool BlockPool = *NewBlockPool()
 	bloc := genesis.CreateBlock(createListTx("You talkin' to me?", *walletExample), *walletExample)
 	blocConc := genesis.CreateBlock(createListTx("No Luke, I am your father", *walletExample), *walletExample)
 	pool.AddBlock(*bloc)
@@ -146,6 +146,7 @@ func TestBlockPool(t *testing.T) {
 
 func TestTxPool(t *testing.T) {
 	var pool = NewTransactionPool(nil, Nothing)
+	pool.SetMetricHandler(whiteMetric{})
 	walletExample := NewWallet("Chuck Norris")
 	var isAdded = true
 	transactionRef := NewBruteTransaction([]byte(fmt.Sprintf("The Godfather")), *walletExample)

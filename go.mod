@@ -31,5 +31,3 @@ require (
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-require github.com/jfeliu007/goplantuml v1.5.2 // indirect

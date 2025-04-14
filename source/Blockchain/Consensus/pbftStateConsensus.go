@@ -1,7 +1,9 @@
 package Consensus
 
 import (
+	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/binary"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"pbftnode/source/Blockchain"
@@ -24,6 +26,7 @@ type PBFTStateConsensus struct {
 	chanPrioInMsg    chan Blockchain.Message
 	chanTxMsg        chan Blockchain.Message
 	chanUpdateStatus chan Blockchain.Message
+	acceptUnknownTx  bool
 }
 
 func (consensus *PBFTStateConsensus) GetBlockchain() *Blockchain.Blockchain {
@@ -36,12 +39,14 @@ func (consensus *PBFTStateConsensus) GetTransactionPool() Blockchain.Transaction
 
 func NewPBFTStateConsensus(wallet *Blockchain.Wallet, numberOfNode int, param Blockchain.ConsensusParam) *PBFTStateConsensus {
 	consensus := &PBFTStateConsensus{
-		CoreConsensus: *NewCoreConsensus(wallet, numberOfNode, ConsensusArgs{
-			param.MetricSaveFile,
-			param.TickerSave,
-			param.ControlType,
-			param.Behavior,
-			param.RefreshingPeriod,
+		CoreConsensus: *NewCoreConsensus(wallet, numberOfNode, consensusArgs{
+			MetricSaveFile:   param.MetricSaveFile,
+			TickerSave:       param.TickerSave,
+			ControlType:      param.ControlType,
+			Behavior:         param.Behavior,
+			RefreshingPeriod: param.RefreshingPeriod,
+			SelectionType:    param.SelectionType,
+			selectorArgs:     param.SelectorArgs,
 		}),
 		state:            NewRoundSt,
 		toKill:           make(chan chan struct{}),
@@ -50,6 +55,7 @@ func NewPBFTStateConsensus(wallet *Blockchain.Wallet, numberOfNode int, param Bl
 		chanPrioInMsg:    make(chan Blockchain.Message, 128),
 		chanUpdateStatus: make(chan Blockchain.Message, 1),
 		BlockPoolNV:      Blockchain.NewBlockPool(),
+		acceptUnknownTx:  param.AcceptTxFromUnknown,
 	}
 	if consensus.IsProposer() {
 		consensus.state = NewRoundProposerSt
@@ -74,7 +80,7 @@ func (consensus *PBFTStateConsensus) updateState(state consensusState) {
 			Int("ID", consensus.GetId()).
 			Str("Old State", consensus.state.String()).
 			Str("New State", state.String()).
-			Int("Proposer", consensus.GetProposerId()).
+			Int("Proposer", consensus.BlockChain.GetProposerId()).
 			Str("ref", base64.StdEncoding.EncodeToString(consensus.currentHash)).
 			Int64("at", time.Now().UnixNano()).
 			Msg("Consensus State Change")
@@ -258,10 +264,13 @@ func (consensus *PBFTStateConsensus) receivedMessage(message Blockchain.Message)
 
 func (consensus *PBFTStateConsensus) receiveTransacMess(message Blockchain.Message) {
 	transac := message.Data.(Blockchain.Transaction)
-	if !consensus.TransactionPool.ExistingTransaction(transac) && !consensus.BlockChain.ExistTx(transac.Hash) &&
+	if (consensus.acceptUnknownTx || consensus.Validators.IsValidator(message.Data.GetProposer())) &&
+		!consensus.TransactionPool.ExistingTransaction(transac) && !consensus.BlockChain.ExistTx(transac.Hash) &&
 		transac.VerifyTransaction() &&
 		(!transac.IsCommand() || transac.VerifyAsCommandShort(consensus.Validators)) {
 		consensus.ReceiveTrustedMess(message)
+	} else {
+		log.Error().Msg("The transaction is considered as invalid")
 	}
 }
 
@@ -278,7 +287,7 @@ func (consensus *PBFTStateConsensus) ReceiveTrustedMess(message Blockchain.Messa
 			ToBroadcast: Blockchain.DontBroadcast,
 			Priority:    message.Priority,
 		})
-	} else if (message.ToBroadcast == Blockchain.DefaultBehavour) && !consensus.IsProposer() {
+	} else if (message.ToBroadcast == Blockchain.DefaultBehaviour) && !consensus.IsProposer() {
 		consensus.SocketHandler.TransmitTransaction(message)
 	}
 }
@@ -392,4 +401,10 @@ func (consensus *PBFTStateConsensus) Close() {
 
 func (consensus PBFTStateConsensus) GetIncQueueSize() int {
 	return len(consensus.chanReceivMsg) + len(consensus.chanPrioInMsg)
+}
+
+func (consensus PBFTStateConsensus) GenerateNewValidatorListProposition(newSize int) []ed25519.PublicKey {
+	seedByte := consensus.GetBlockchain().GetLastBLoc().Hash
+	seed := binary.BigEndian.Uint64(seedByte)
+	return consensus.selector.GenerateNewValidatorListProposition(consensus.Validators, newSize, int64(seed))
 }

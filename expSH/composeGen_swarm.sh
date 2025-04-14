@@ -5,102 +5,43 @@ NumberOfNode=8
 CPUperNode="0.5"
 MemLim="1024M"
 MemReserv="384M"
-log="warn"
-nbPi=4
-regularSave=10
+lag=""
+log="error"
+nbPi=10
+regularSave=55
 txPoolBehavior="Drop"
-controPeriod=24
+controPeriod=12
 refreshPeriod=5
 SondeNumber=2
 MetricTicker=5
 typeLag="Fix"
-ModelFile="/home/model/3Dmap.csv"
-
-lag=""
-ModelType=""
+ModelFile="/home/model/model.csv"
 FCB=""
-modelFileOpt=""
-save=""
 
-nbArg=2
-
-Help() {
-  # Display Help
-  echo "Create a yaml file use in the docker swarm."
-  echo
-  echo "Syntax: composeGen_swarm [options] NumberOfNode nbPi"
-  echo "options:"
-  printf "\t h  \t\t Print this Help. \n"
-  printf "\t c float  \t Set the cpu per node. \n"
-  printf "\t m string \t Set the model. \n"
-  printf "\t s \t\t Save in multiple file \n"
-  printf "\t f \t\t Set the Feedback Control \n"
-  printf "\t l int \t\t Set the lag \n"
-  printf "\t g string \t Delay type (if lag) {NoDelay|Normal|Poisson|Fix} (default %s) \n" $typeLag
-  printf "\t T string \t Set the FCB type {OneValidator|Hysteresis|ModelComparison} (default ModelComparison) \n"
-  printf "\t m string \t Set the modelFile (default %s) \n" $ModelFile
-  printf "\t F string \t Yaml filename (default %s) \n" $fileName
-  echo
-}
-
-while getopts "hfg:l:c:sF:m:T: " opt; do
-  case $opt in
-  h)
-    Help
-    exit 0
-    ;;
-  f)
-    FCB="--FCB"
-    ;;
-  g)
-    typeLag="$OPTARG"
-    ;;
-  l)
-    lag="--avgDelay $OPTARG"
-    ;;
-  c)
-    CPUperNode=$OPTARG
-    ;;
-  s)
-    save="--multiSaveFile"
-    ;;
-  F)
-    fileName=$OPTARG
-    ;;
-  T)
-    ModelType="--FCType $OPTARG"
-    ;;
-  m)
-    ModelFile=$OPTARG
-    if [ "$ModelFile" != "" ]; then
-      modelFileOpt="--modelFile /home/model/$ModelFile"
-    fi
-    ;;
-  ' ')
-    ;;
-  \?)
-    echo "Invalid option: -$OPTARG l" >&2
-    exit 1
-    ;;
-  :)
-    echo "Option -$OPTARG requires an argument." >&2
-    exit 1
-    ;;
-  esac
-done
-shift $((OPTIND - 1))
-
-typeLag="--delayType $typeLag"
-Flag="--RamOpt --PoA --txPoolBehavior $txPoolBehavior --debug $log --regularSave $regularSave $typeLag $lag $ModelType --ControlPeriod $controPeriod --RefreshingPeriod $refreshPeriod $FCB $modelFileOpt $save"
+nbArg=4
 
 if [ $# == "$nbArg" ]; then
-  NumberOfNode=$1
-  nbPi=$2
+  fileName=$1
+  NumberOfNode=$2
+  nbPi=$3
+  lag=""
+  if [ $4 == "FCB" ]; then
+    FCB="--FCB"
+  fi
+elif [ $# == 5 ]; then
+  fileName=$1
+  NumberOfNode=$2
+  nbPi=$3
+  if [ $4 == "FCB" ]; then
+    FCB="--FCB"
+  fi
+  lag="--delayType $typeLag --avgDelay $5"
 else
-  echo "Error in the number of argument, need $nbArg, got $#" >&2
-  Help
-  exit 1
+  echo "composeGen_swarm.sh [fileName] [NumberOfNode] [nbPi] [FCB] [lag ?]"
 fi
+
+unusedFlag="--multiSaveFile"
+Flag="--RamOpt --PoA --txPoolBehavior $txPoolBehavior --debug $log --regularSave $regularSave $lag --modelFile $ModelFile --FCType ModelComparison --ControlPeriod $controPeriod --RefreshingPeriod $refreshPeriod $FCB"
 
 echo "version: '3.9'
 
@@ -203,7 +144,7 @@ for i in $(seq $MinimumNb $NumberOfNodeLess); do
 
   node$i:
     container_name: node$i
-    image: guilain/pbftnode_armv8:latest
+    image: guilain/pbftnode_armv8
     depends_on:
       - bootstrap
     volumes:

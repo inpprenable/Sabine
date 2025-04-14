@@ -119,10 +119,6 @@ func ByteToBlock(data []byte) (block Block) {
 	return
 }
 
-func (block Block) GetNextProposer(numberOfNode int) int {
-	return int(block.Hash[0]) % numberOfNode
-}
-
 func (block Block) GetHashPayload() string {
 	return base64.StdEncoding.EncodeToString(block.Hash)
 }

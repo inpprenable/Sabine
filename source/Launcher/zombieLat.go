@@ -14,7 +14,7 @@ import (
 type ZombieArg struct {
 	ClientArg
 	Reducing int
-	NbOfNode int
+	NbVal    int
 }
 
 type ZombieLatArg struct {
@@ -30,14 +30,20 @@ func ZombieLat(arg ZombieLatArg) {
 	arg.init()
 
 	Contact := arg.Contact
+	var nbOfNode int
 	if arg.ByBootstrap {
-		var nbOfNode int
 		Contact, nbOfNode, _ = getAContact(arg.Contact)
-		if arg.NbOfNode != 0 && nbOfNode != arg.NbOfNode {
-			log.Panic().Msgf("Wrong number of node connected, expected %d, got %d", arg.NbOfNode, nbOfNode)
+		if arg.NumberOfNode != 0 && nbOfNode != arg.NumberOfNode {
+			log.Panic().Msgf("Wrong number of node connected, expected %d, got %d", arg.NumberOfNode, nbOfNode)
 			arg.close()
 			return
 		}
+	} else {
+		nbOfNode = arg.NumberOfNode
+	}
+
+	if nbOfNode == 0 {
+		log.Panic().Msgf("The number of node should not be equal to 0")
 	}
 
 	log.Print("Try to connect with ", Contact)
@@ -56,11 +62,16 @@ func ZombieLat(arg ZombieLatArg) {
 	encoder := gob.NewEncoder(conn)
 	decoder := gob.NewDecoder(conn)
 	wallet := Blockchain.NewWallet("NODE" + arg.NodeID)
+	validator := Blockchain.Validators{}
+	validator.GenerateAddresses(arg.NumberOfNode)
+	selector := arg.SelectionType.CreateValidatorSelector(Blockchain.ArgsSelector{})
 	go handleCommitReturn(decoder, arg.interruptChan, channel_loop, toKill)
 
+	newListProposal := selector.GenerateNewValidatorListProposition(&validator, arg.NbVal, -1)
 	sendTxWaitCommit(wallet.CreateTransaction(Blockchain.Commande{
-		Order:     Blockchain.VarieValid,
-		Variation: -arg.Reducing,
+		Order:           Blockchain.VarieValid,
+		Variation:       arg.NbVal,
+		NewValidatorSet: newListProposal,
 	}), encoder, channel_loop)
 	time.Sleep(500 * time.Millisecond)
 	fmt.Println("The number of validator should be reduced")
@@ -94,7 +105,7 @@ func stopSleep(channel <-chan os.Signal, continu *bool, conn net.Conn, channelLo
 		}
 	}
 	*continu = false
-	log.Debug().Msgf("Continu : ", *continu)
+	log.Debug().Msgf("Continu : %t", *continu)
 	if channelLoop != nil {
 		channelLoop <- true
 	}
@@ -117,13 +128,13 @@ func sendTxWaitCommit(transaction *Blockchain.Transaction, encoder *gob.Encoder,
 	<-channel_loop
 	t1 = time.Now()
 	diff = t1.Sub(t0)
-	log.Debug().Msgf("I will wait ", diff)
+	log.Debug().Msgf("I will wait %s", diff)
 	//	time.Sleep(1 * diff)
 	return diff
 }
 
 func handleCommitReturn(decoder *gob.Decoder, c chan os.Signal, channel_loop chan bool, toKill chan<- bool) {
-	var hashMap map[string]struct{} = make(map[string]struct{})
+	var hashMap = make(map[string]struct{})
 	for len(c) == 0 {
 		var message Blockchain.Message
 		err := decoder.Decode(&message)

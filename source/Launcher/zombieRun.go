@@ -35,11 +35,17 @@ func ZombieRun(arg ZombieRunArg) {
 	Socket.GobLoader()
 	encoder := gob.NewEncoder(conn)
 	wallet := Blockchain.NewWallet("NODE" + arg.NodeID)
+	validator := Blockchain.Validators{}
+	validator.GenerateAddresses(arg.NumberOfNode)
+	selector := arg.SelectionType.CreateValidatorSelector(Blockchain.ArgsSelector{})
+
 	go stopSleep(arg.interruptChan, &continu, conn, channelLoop)
 
+	newListProposal := selector.GenerateNewValidatorListProposition(&validator, arg.NbVal, -1)
 	sendTx(*wallet.CreateTransaction(Blockchain.Commande{
-		Order:     Blockchain.VarieValid,
-		Variation: -arg.Reducing,
+		Order:           Blockchain.VarieValid,
+		Variation:       arg.NbVal,
+		NewValidatorSet: newListProposal,
 	}), encoder, &listContact, true)
 
 	toKill := make(chan chan<- struct{})
@@ -49,15 +55,19 @@ func ZombieRun(arg ZombieRunArg) {
 	tick := time.Duration(arg.DelayPerChange) * time.Second
 	ticker := time.NewTicker(tick)
 
-	nbStep := (arg.NbOfNode - 4) / arg.NbValPerChange
+	nbStep := (arg.NumberOfNode - 4) / arg.NbValPerChange
 	log.Info().Msgf("Tick %d/%d s", 0, (nbStep+1)*arg.DelayPerChange)
+	initNbVal := arg.NbVal
 	for i := 0; i < nbStep && continu; i++ {
 		select {
 		case <-ticker.C:
 			log.Info().Msgf("Tick %d/%d s", (i+1)*arg.DelayPerChange, (nbStep+1)*arg.DelayPerChange)
+			initNbVal = initNbVal - arg.NbValPerChange
+			newListProposalIt := selector.GenerateNewValidatorListProposition(&validator, initNbVal, -1)
 			sendTx(*wallet.CreateTransaction(Blockchain.Commande{
-				Order:     Blockchain.VarieValid,
-				Variation: -arg.NbValPerChange,
+				Order:           Blockchain.VarieValid,
+				Variation:       initNbVal,
+				NewValidatorSet: newListProposalIt,
 			}), encoder, &listContact, true)
 		case <-channelLoop:
 

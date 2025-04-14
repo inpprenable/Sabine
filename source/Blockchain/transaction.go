@@ -78,14 +78,6 @@ func (transaction Transaction) ToByte() []byte {
 	return byted
 }
 
-func ByteToTx(data []byte) (transaction Transaction) {
-	err := json.Unmarshal(data, &transaction)
-	if err != nil {
-		log.Fatal().Msgf("Json Parsing error : %s", err)
-	}
-	return
-}
-
 type CommandeType int8
 
 const (
@@ -94,9 +86,9 @@ const (
 )
 
 type Commande struct {
-	Order     CommandeType `json:"order"`
-	Variation int          `json:"variation"`
-	// Possibility to create other fields
+	Order           CommandeType        `json:"order"`
+	Variation       int                 `json:"variation"`
+	NewValidatorSet []ed25519.PublicKey `json:"newValidatorSet"`
 }
 
 func (c Commande) inputToByte() ([]byte, error) {
@@ -115,13 +107,16 @@ func (transac Transaction) verifyAsCommand(validators ValidatorInterf) (bool, er
 		return false, errors.New("NOT A COMMAND")
 	}
 	if !validators.IsActiveValidator(transac.TransaCore.From) {
-		return false, errors.New("NOT EMITTED BY A VALIDATOR")
+		if !validators.IsValidator(transac.TransaCore.From) {
+			return false, errors.New("NOT EMITTED BY A VALIDATOR")
+		}
+		return false, errors.New("NOT EMITTED BY AN ACTIVE VALIDATOR")
 	}
 	switch commande.Order {
 	case VarieValid:
-		newSize := validators.GetNumberOfValidator() + commande.Variation
-		if !validators.IsSizeValid(newSize) {
-			return false, fmt.Errorf("NEW SIZE OUT OF BAND: %d", newSize)
+		//newSize := validators.GetNumberOfValidator() + commande.Variation
+		if !validators.CheckIfValidatorsAreNodes(commande.NewValidatorSet) {
+			return false, fmt.Errorf("new Proposed list is not valid")
 		}
 	case ChangeDelay:
 		if commande.Variation < 0 {
@@ -133,7 +128,7 @@ func (transac Transaction) verifyAsCommand(validators ValidatorInterf) (bool, er
 	return true, nil
 }
 
-//VerifyAsCommandShort Remove the error From the Check of verifyAsCommand
+// VerifyAsCommandShort Remove the error From the Check of verifyAsCommand
 func (transac Transaction) VerifyAsCommandShort(validators ValidatorInterf) bool {
 	ok, err := transac.verifyAsCommand(validators)
 	if err != nil {

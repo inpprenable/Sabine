@@ -41,19 +41,19 @@ func newTestChannel(numberOfNode int, avgLatency *Socket.NodeDelay) *testChannel
 		toIgnore:               make(chan queryIgnore),
 	}
 	for i := 0; i < numberOfNode; i++ {
-		channel.listLatency[i] = channel.avgLatency.NewSocketDelay()
+		channel.listLatency[i] = channel.avgLatency.NewSocketDelay(i)
 	}
 	return channel
 }
 
 func newTestChannelFullPBFT(numberOfNode int) *testChannel {
-	newChannel := newTestChannel(numberOfNode, Socket.NewNodeDelay(nil, true))
+	newChannel := newTestChannel(numberOfNode, Socket.NewNodeDelayNoDelay())
 	go newChannel.channelLoopGen()
 	return newChannel
 }
 
 func newTestChannelPoANV(numberOfNode int) *testChannel {
-	newChannel := newTestChannel(numberOfNode, Socket.NewNodeDelay(nil, true))
+	newChannel := newTestChannel(numberOfNode, Socket.NewNodeDelayNoDelay())
 	newChannel.PoANV = true
 	newChannel.incomingMessagePoA = make(chan testMessageId, int(math.Pow(float64(numberOfNode), mathPowBuff)))
 	go newChannel.channelLoopGen()
@@ -171,10 +171,10 @@ func (channel *testChannel) unicastMsg(id int, messID testMessageId) {
 	}()
 }
 
-func (channel *testChannel) UpdateDelay(parameter float64) {
-	channel.avgLatency.ProbaDelay.UpdateDelay(parameter)
+func (channel *testChannel) UpdateDelay(parameter int) {
+	channel.avgLatency.AvgDelay = parameter
 	for i, _ := range channel.listLatency {
-		channel.listLatency[i] = channel.avgLatency.NewSocketDelay()
+		channel.listLatency[i] = channel.avgLatency.NewSocketDelay(i)
 	}
 }
 

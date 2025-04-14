@@ -146,7 +146,7 @@ func (control *ControlFeedBack) controlLoop(chanInstruction <-chan bool, chanFro
 	var committedThroughputQueue Queue = NewFixTor(buffer)
 	var requestedThroughputQueue Queue = NewFixTor(buffer)
 	var blockThroughputQueue Queue = NewFixTor(buffer)
-	for true {
+	for {
 		select {
 		case throughputs := <-chanFromMetHandler:
 			committedTx, requestedTx, blockThroughput := throughputs[0], throughputs[1], throughputs[2]
@@ -213,52 +213,56 @@ func ModelCmpControl(requestedThroughput float64, emittedThroughput float64, blo
 		variation = idealNbValue - actualNbVal
 	}
 	log.Info().Msgf("Ask for a variation of : %d", variation)
+	newListProposal := control.consensus.GenerateNewValidatorListProposition(idealNbValue)
 	tx = control.consensus.MakeTransaction(Commande{
-		Order:     VarieValid,
-		Variation: variation,
+		Order:           VarieValid,
+		Variation:       variation,
+		NewValidatorSet: newListProposal,
 	})
 	return tx
 }
 
 func oneValidatorControl(committedThroughput float64, emittedThroughput float64, control *ControlFeedBack) (tx *Transaction) {
+	var variation int
 	if math.Abs(committedThroughput-emittedThroughput)/committedThroughput < 0.1 {
-		tx = control.consensus.MakeTransaction(Commande{
-			Order:     VarieValid,
-			Variation: 1,
-		})
+		variation = 1
 		log.Info().Msg("Ask to increase")
 	} else {
-		tx = control.consensus.MakeTransaction(Commande{
-			Order:     VarieValid,
-			Variation: -1,
-		})
+		variation = -1
 		log.Info().Msg("Ask to decrease")
 	}
+	actualNbVal := control.consensus.GetNumberOfValidator()
+	newListProposal := control.consensus.GenerateNewValidatorListProposition(actualNbVal + variation)
+	tx = control.consensus.MakeTransaction(Commande{
+		Order:           VarieValid,
+		Variation:       variation,
+		NewValidatorSet: newListProposal,
+	})
+
 	return tx
 }
 
 const delta float64 = 0.05
 
 func HysteresisControl(committedThroughput float64, emittedThroughput float64, control *ControlFeedBack) (tx *Transaction) {
+	var variation int
 	if (emittedThroughput-committedThroughput)/committedThroughput > 0.1+delta {
-		tx = control.consensus.MakeTransaction(Commande{
-			Order:     VarieValid,
-			Variation: 1,
-		})
+		variation = 1
 		log.Info().Msg("Ask to increase")
 	} else if (emittedThroughput-committedThroughput)/committedThroughput < 0.1-delta {
-		tx = control.consensus.MakeTransaction(Commande{
-			Order:     VarieValid,
-			Variation: -1,
-		})
+		variation = -1
 		log.Info().Msg("Ask to decrease")
 	} else {
-		tx = control.consensus.MakeTransaction(Commande{
-			Order:     VarieValid,
-			Variation: 0,
-		})
+		variation = 0
 		log.Info().Msg("Ask to not change")
 	}
+	actualNbVal := control.consensus.GetNumberOfValidator()
+	newListProposal := control.consensus.GenerateNewValidatorListProposition(actualNbVal + variation)
+	tx = control.consensus.MakeTransaction(Commande{
+		Order:           VarieValid,
+		Variation:       variation,
+		NewValidatorSet: newListProposal,
+	})
 	return tx
 }
 
